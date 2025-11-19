@@ -1,0 +1,42 @@
+The simulation results are given in a space-delimited tabular format saying the relations of
+time(Time), average response time(avgResponseTime),the number of servers(Servers),the number of active servers(ActiveServers),the value of dimmer(Dimmer),utility in that period(Utility).
+
+The number of Servers and ActiveServers are different because booting servers needs time after adding servers.
+In this time, it takes 120s to boot a server(latency = 120s) and responseTimeThreshold = 0.50s.
+
+
+Increasing dimmer value, decreasing the number of server (cost) and reducing the response time will be increasing utility. There are some difficult point.Firstly, increasing dimmer value may make response time longer. Secondly, much cost cased by increasing server will be reducing responsetime.
+
+These operations are realized by the method of pMacroTactic->addTactic() below.
+Increasing server:       pMacroTactic->addTactic(new AddServerTactic);
+Changing dimmer value:   pMacroTactic->addTactic(new SetDimmerTactic(dimmer))
+decreasing server:       pMacroTactic->addTactic(new RemoveServerTactic)
+
+A utility function is written in R language and that is following again.
+
+periodUtilityICAC2016 <- function(maxServers, maxServiceRate, arrivalRateMean, dimmer,
+                          evaluationPeriod, RT_THRESHOLD, avgResponseTime,
+                          avgServers) {
+  basicRevenue <- 1
+  optRevenue <- 1.5
+  maxThroughput <- maxServers * maxServiceRate
+  latePenalty <- maxThroughput * optRevenue
+  
+  positiveUtility <- round((arrivalRateMean * ((1 - dimmer) * basicRevenue + dimmer * optRevenue)))
+
+  utility <- ifelse(avgResponseTime>RT_THRESHOLD | avgResponseTime < 0,
+         pmin(0.0, arrivalRateMean * optRevenue - latePenalty),
+         positiveUtility)
+
+}
+
+
+The simulation using your implementation this time result show that the total value of utility is {NOW_UTILITY}.
+
+
+Here is results of tabular format.
+
+{CSV}
+
+
+1. Please select areas of your implementing code where results show that the utilities can be improved, server can be reduced or dimmer can be higher when responseTime is low, during which time period and what is the cause of the low utility at that period?

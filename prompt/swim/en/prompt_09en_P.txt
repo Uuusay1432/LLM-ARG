@@ -1,0 +1,20 @@
+5.  Please make new rules which refer to what conditions should increase or decrease the number of servers or change the dimmer value, and implement new evaluate method in MyAdaptationManager.cpp to aim to maximize the sum of utilities calculated by periodUtilityICAC2016 over the entire period of the simulation with reference to what you have analyzed until now and the following.
+
+
+
+
+
+
+The past {NUM} problems and improvements of implementation, in order from newest to oldest
+
+
+[Problems & Plans]
+{PROBLEMS_PLANS}
+
+
+
+
+A program scoring the max sum of the utility( Utility = {MAX_UTILITY} ) is here.
+
+
+{PROGRAM}

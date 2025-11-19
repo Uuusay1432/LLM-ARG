@@ -1,0 +1,67 @@
+### Knowledge base - taskdescription & adaptation goal & variable information ###
+以下の条件に従って C++ コードを生成します。コード以外のテキストは含めないでください。
+
+これらのトレードオフがより良い方法で処理され、periodUtilityICAC2016 というユーティリティ関数によって計算されるユーティリティの合計が最大になるという新しいルールを作成します。ここでのルールは、サーバーの数を増減するか、調光器の値を変更する条件を示しており、他の操作はありません。
+
+たとえば、さまざまなメトリックを線形または二次形式で組み合わせることにより、メトリックを複合的に組み合わせることもできます。
+
+次に、ReactiveAdaptationManager.cpp に基づいて、次の制限を使用して MyAdaptationManager.cpp のみを実装します。MyAdaptationManager.cpp のみを出力します。
+
+
+制約1:
+使用可能なメトリックは、「model」クラス内のメンバー変数とメソッドを通じて取得できます。
+
+これらはカプセル化されているため、各メトリックを使用するメソッドでモデルに関する情報を取得した後でメトリックを取得できます (例: Model* pModel = getModel();)。
+以下は、シミュレーションで使用できるメトリックです。メトリックを取得する方法
+
+pModel->getObservations().basicResponseTime     : the average response time for basic responses not including optional content
+pModel->getObservations().optResponseTime       : the average response time for responses with optional content
+pModel->getObservations().basicThroughput       : the throughput for basic responses not including optional content
+pModel->getObservations().optThroughput         : the throughput for responses with optional content
+pModel->getObservations().avgResponseTime       : the average response time for responses including and not optional content
+pModel->getObservations().utilization           : the utilization of the server with serverId
+pModel->getConfiguration().getActiveServers()   : the number of active servers
+pModel->getDimmerFactor()                       : the dimmer value
+pModel->getServers()                            : the number of servers
+pModel->getActiveServers()                      : the number of active servers
+pModel->getMaxServers()                         : the maximum number of servers
+
+サーバーの数を変更するときは、起動中のサーバーがあるかどうかを確認し、サーバーの上限/下限に注意してください。起動中のサーバーを確認するには、「isServerBooting = pModel->getServers() > pModel->getActiveServers()」の変数を使用できます。
+ディマー値は [0..1] です。utilizationが高いということは、サーバーの稼働率が高いことを意味します。
+
+さらに、Tacticsは AddServerTactic、RemoveServerTactic、SetDimmerTactic の 3 つだけです。他の戦術は使用できません。
+
+
+
+
+制約2:
+プログラムに「/managers/adaptation/UtilityScorer.h」を含めると、マクロ変数の 1 つである RT_THRESHOLD と MAX_SERVICE_RATE を宣言なしで使用できます。これらは、シミュレーションの結果の応答時間と最大サービス レートのしきい値を定義します。したがって、プログラムで再度定義および宣言しないでください。
+!!!RT_THRESHOLD 以外のマクロ変数を使用する場合は、プログラムの先頭でマクロ変数を定義する必要があります。!!!
+
+制約3:
+ディレクトリ構造について。
+~/swim/swim/src/
+    managaers/
+        adaptation/
+            UtilityScorer.h
+            BaseAdaptationManager.h
+            MyReactiveAdaptation.h
+            MyReactiveAdaptation.cc
+        execution/
+            AllTactics.h
+    model/
+        Configuration.h
+        Model.h
+        Observtions.h
+
+クラスTacticに関連するファイルは"managers/execution/AllTactics.h"をincludeすれば事足りる。
+
+MacroTacticは並行して複数の操作を行うことができるため、MacroTactic内にサーバーの数を扱う操作を複数回実行しようとするときは、サーバーの数の上限と下限に注意して、
+つまりactiveサーバーが1つしかない時に２回RemoveServerTacticを実行したり、サーバーの数の上限MaxServersを超えてサーバーの数を増やそうとしないことに気をつけて、
+上記3つの制約を絶対に守って、プログラムを実装してください。
+
+プログラムに「managers/execution/AllTactics.h」を含めるだけで、「Tactic」クラスに関する情報を取得できます。
+
+
+
+###ここで初めて実装させる###

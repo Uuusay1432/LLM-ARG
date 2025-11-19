@@ -1,0 +1,107 @@
+### Knowledge base - taskdescription ###
+
+より多くのオプション コンテンツが提供され、Web サーバーで応答時間要件が満たされると、収益は高くなります。
+リクエストへの応答にオプション コンテンツを含めないと、システムにかかる負荷が軽減されます。
+さらに、サーバーの数を増やすとシステムにかかる負荷は軽減されますが、システムを実行するコストは使用されるサーバーの数に比例します。
+
+
+### Knowledge base - adaptation goal ###
+
+SWIM (Web インフラストラクチャおよび管理シミュレータ) でシステムをシミュレートする場合、AdaptationManager はパラメーターで定義された期間に評価メソッドを呼び出し、これらのトレードオフを処理します。
+オプション コンテンツが提供されるかどうかは、dimmer[0..1] の値を使用して決定されます。
+dimmer の値は、オプション コンテンツを含む応答の確率と考えることができます。
+AdaptationManager は、外部ユーティリティ関数によって計算された期間のユーティリティの値を定義し、シミュレーションの全期間にわたってユーティリティの合計を最大化することを目指します。
+
+ユーティリティ関数は R 言語で記述され、次のようになります。
+
+periodUtilitySEAMS2017A <- function(maxServers, maxServiceRate, arrivalRateMean, dimmer,
+                                  evaluationPeriod, RT_THRESHOLD, avgResponseTime,
+                                  avgServers) {
+  basicRevenue <- 1
+  optRevenue <- 1.5
+  serverCost <- 10
+  
+  precision <- 1e-5
+  
+  maxThroughput <- maxServers * maxServiceRate
+
+  Ur <- (arrivalRateMean * ((1 - dimmer) * basicRevenue + dimmer * optRevenue))
+  Uc <- serverCost * (maxServers - avgServers)
+  UrOpt <- arrivalRateMean * optRevenue
+  
+  utility <- ifelse(avgResponseTime <= RT_THRESHOLD & Ur >= UrOpt - precision, Ur + Uc,
+                    ifelse(avgResponseTime <= RT_THRESHOLD, Ur,
+                           pmin(0.0, arrivalRateMean - maxThroughput) * optRevenue))
+}
+
+
+
+
+### Knowledge base - variable information ###
+
+調光値の変更とサーバー数の増減の操作は、「pMacroTactic->addTactic()」メソッドによって実現されます。
+
+サーバー数の増加: pMacroTactic->addTactic(new AddServerTactic);
+調光値の変更: pMacroTactic->addTactic(new SetDimmerTactic(dimmer))
+サーバー数の減少: pMacroTactic->addTactic(new RemoveServerTactic)
+
+評価メソッドは MacroTactic を返します。MacroTactic を含む Tactics は並列実行されるため、すべての操作が同時に実行されます。
+
+さらに、サーバーを追加した後、サーバーの起動に時間がかかるため、サーバーと ActiveServers の数は異なります。この間、サーバーの起動には 120 秒かかります (レイテンシ = 120 秒)。
+
+上記に基づいて、AdaptationManager プログラムの例を説明します。
+
+
+
+ReactiveAdaptationManager.h
+
+#ifndef __PLASASIM_REACTIVEADAPTATIONMANAGER_H_
+#define __PLASASIM_REACTIVEADAPTATIONMANAGER_H_
+
+#include "BaseAdaptationManager.h"
+
+/**
+ * Simple reactive adaptation manager
+ */
+class ReactiveAdaptationManager : public BaseAdaptationManager
+{
+  protected:
+    virtual Tactic* evaluate();
+};
+
+#endif
+
+
+
+ReactiveAdaptationManager.cpp
+
+#include "ReactiveAdaptationManager.h"
+#include "managers/adaptation/UtilityScorer.h"
+#include "managers/execution/AllTactics.h"
+
+using namespace std;
+
+Define_Module(ReactiveAdaptationManager);
+
+Tactic* ReactiveAdaptationManager::evaluate() {
+    MacroTactic* pMacroTactic = new MacroTactic;
+    Model* pModel = getModel();
+    double dimmer = pModel->getDimmerFactor();
+    bool isServerBooting = pModel->getServers() > pModel->getActiveServers();
+    
+    //make your adaptation rules
+    // add server? reduce server? adjust dimmer?
+
+    /*
+    how to realize these operation
+    if (!isServerBooting && pModel->getServers() > 1) {                         //be care of lower limit
+        pMacroTactic->addTactic(new RemoveServerTactic);                        //method to remove server
+    }
+    if (!isServerBooting && pModel->getServers() < pModel->getMaxServers()) {   //be care of upper limit 
+        pMacroTactic->addTactic(new AddServerTactic);                           //method to add server
+    }
+    dimmer = min(max(0.0, dimmer + dimmerStep), 1.0);                               //dimmer is [0..1]  
+    pMacroTactic->addTactic(new SetDimmerTactic(dimmer));                           //method to adjust dimmer
+    */
+    return pMacroTactic;
+}

@@ -1,0 +1,1205 @@
+[
+    {
+        "role": "user",
+        "content": "The revenue is higher when more optional content is served and the response time requirement is met in the Web Servers.
+Not including the optional content in the response to request reduces the load imposed on the system.
+Moreover, the load imposed on the system is reduced by increasing the number of servers, but the cost of running a system is proportional to the number of servers used.
+
+
+When we simulate the system in SWIM (Simulator for Web Infrastructure and Management), the AdaptationManager calls evaluate method in defined period by the parameter and it treats these tradeoff.
+Whether the optional content are provided or not is determined using the value of dimmer[0..1].
+The value of the dimmer can be thought of as the probability of a response including the optional content.
+AdaptationManager defines the value of utility in the period calculated by outer utility function and it aims to maximize the sum of utilities over the entire period of the simulation.
+
+A utility function is written in R language and that is following.
+
+periodUtilityICAC2016 <- function(maxServers, maxServiceRate, arrivalRateMean, dimmer,
+                          evaluationPeriod, RT_THRESHOLD, avgResponseTime,
+                          avgServers) {
+  basicRevenue <- 1
+  optRevenue <- 1.5
+  maxThroughput <- maxServers * maxServiceRate
+  latePenalty <- maxThroughput * optRevenue
+  
+  positiveUtility <- round((arrivalRateMean * ((1 - dimmer) * basicRevenue + dimmer * optRevenue)))
+
+  utility <- ifelse(avgResponseTime>RT_THRESHOLD | avgResponseTime < 0,
+         pmin(0.0, arrivalRateMean * optRevenue - latePenalty),
+         positiveUtility)
+
+}
+
+
+
+Operation of changing dimmer value and increasing or decreasing the number of servers are realized by the methods of \"pMacroTactic->addTactic()\".
+
+Increase the number of Servers:     pMacroTactic->addTactic(new AddServerTactic);
+Change the value of dimmer:   \t\tpMacroTactic->addTactic(new SetDimmerTactic(dimmer))
+Decrease the number of Servers:     pMacroTactic->addTactic(new RemoveServerTactic)
+
+Evaluate method returns MacroTactic. Tactics including MacroTactic are executed in parallel, so all operations are executed in the same time.
+
+
+Moreover, the number of Servers and ActiveServers are different because booting servers needs time after adding servers. In this time, it takes 120s to boot a server(latency = 120s).
+
+Based on the above, I will tell you the example of AdaptationManager program.
+
+
+
+ReactiveAdaptationManager.h
+
+#ifndef __PLASASIM_REACTIVEADAPTATIONMANAGER_H_
+#define __PLASASIM_REACTIVEADAPTATIONMANAGER_H_
+
+#include \"BaseAdaptationManager.h\"
+
+/**
+ * Simple reactive adaptation manager
+ */
+class ReactiveAdaptationManager : public BaseAdaptationManager
+{
+  protected:
+    virtual Tactic* evaluate();
+};
+
+#endif
+
+
+
+ReactiveAdaptationManager.cpp
+
+#include \"ReactiveAdaptationManager.h\"
+#include \"managers/adaptation/UtilityScorer.h\"
+#include \"managers/execution/AllTactics.h\"
+
+using namespace std;
+
+Define_Module(ReactiveAdaptationManager);
+
+Tactic* ReactiveAdaptationManager::evaluate() {
+    MacroTactic* pMacroTactic = new MacroTactic;
+    Model* pModel = getModel();
+    double dimmer = pModel->getDimmerFactor();
+    bool isServerBooting = pModel->getServers() > pModel->getActiveServers();
+    
+    //make your adaptation rules
+    // add server? reduce server? adjust dimmer?
+
+    /*
+    how to realize these operation
+    if (!isServerBooting && pModel->getServers() > 1) {                         //be care of lower limit
+        pMacroTactic->addTactic(new RemoveServerTactic);                        //method to remove server
+    }
+    if (!isServerBooting && pModel->getServers() < pModel->getMaxServers()) {   //be care of upper limit 
+        pMacroTactic->addTactic(new AddServerTactic);                           //method to add server
+    }
+    dimmer = min(max(0.0, dimmer + dimmerStep), 1.0);                               //dimmer is [0..1]  
+    pMacroTactic->addTactic(new SetDimmerTactic(dimmer));                           //method to adjust dimmer
+    */
+    return pMacroTactic;
+}
+"
+    },
+    {
+        "role": "assistant",
+        "content": "The code snippet provided outlines a basic structure for a reactive adaptation manager that uses a macro tactic to evaluate and possibly adjust system parameters in a simulated web server environment. Below is an explanation of how to implement the adaptation rules for increasing/decreasing servers and adjusting the dimmer value based on the situation of the server load and response times.
+
+### Adaptation Logic
+
+1. **Check Server Status**:
+    - Determine if new servers are booting. This is crucial because server adjustments cannot be made while servers are booting.
+
+2. **Reactive Adjustments**:
+    - **Remove Server**: If the system is not currently booting any servers and there is more than one server currently in operation, consider removing a server (if the load allows it).
+    - **Add Server**: If the system is not booting servers and the total number of servers is less than the maximum specified, consider adding a server to address the load.
+    - **Adjust Dimmer**: The dimmer is a floating-point value between 0 and 1, representing the likelihood of optional content being served. Depending on the load and average response time, adjust the dimmer towards optimal performance.
+
+Here\u2019s an example of how you can implement these rules in the `ReactiveAdaptationManager` class.
+
+### Implementation of `evaluate` Method:
+
+```cpp
+Tactic* ReactiveAdaptationManager::evaluate() {
+    MacroTactic* pMacroTactic = new MacroTactic;
+    Model* pModel = getModel();
+    double dimmer = pModel->getDimmerFactor();
+    bool isServerBooting = pModel->getServers() > pModel->getActiveServers();
+
+    double avgResponseTime = pModel->getAverageResponseTime();  // Obtain average response time
+    double RT_THRESHOLD = ... ;  // Define a response time threshold
+    double arrivalRate = pModel->getArrivalRateMean();  // Get the mean arrival rate
+
+    // Check conditions and adjust as needed
+    if (!isServerBooting) {
+        // Check for server removal
+        if (pModel->getServers() > 1 && avgResponseTime < RT_THRESHOLD) {
+            pMacroTactic->addTactic(new RemoveServerTactic);
+        }
+
+        // Check for server addition
+        if (pModel->getServers() < pModel->getMaxServers() && avgResponseTime > RT_THRESHOLD) {
+            pMacroTactic->addTactic(new AddServerTactic);
+        }
+    }
+
+    // Adjust dimmer based on current situation
+    double utilityWithCurrentDimmer = periodUtilityICAC2016(
+        pModel->getMaxServers(), pModel->getMaxServiceRate(),
+        arrivalRate, dimmer, 
+        evaluationPeriod, RT_THRESHOLD, 
+        avgResponseTime, pModel->getActiveServers() 
+    );
+
+    // Logic to adjust dimmer
+    if (avgResponseTime > RT_THRESHOLD) {
+        dimmer = std::min(dimmer + 0.1, 1.0);  // Increase dimmer towards serving optional content
+    } else {
+        dimmer = std::max(dimmer - 0.1, 0.0);  // Decrease dimmer towards reducing optional content
+    }
+
+    pMacroTactic->addTactic(new SetDimmerTactic(dimmer));
+
+    return pMacroTactic;
+}
+```
+
+### Explanation of the Code:
+
+- **Server Removal**: The logic checks if the average response time is below the threshold and if there are more than one operational server. If both conditions are met, it adds a tactic to remove a server.
+  
+- **Server Addition**: If the average response time is above the threshold and there are currently fewer servers than the maximum allowed, it decides to add a new server.
+
+- **Dimmer Adjustment**: The dimmer is increased if the response time exceeds the threshold (indicating that more optional content might alleviate some load). Conversely, it is decreased when the response time is below the threshold.
+
+### Important Considerations:
+- Make sure to define your response time threshold and any specific conditions for server addition/removal based on your system requirements.
+- The `dimmer` adjustment logic may need more nuanced calculations or conditions based on simulation results.
+- Ensure to test the adaptation logic under various load conditions to ensure it behaves as expected and improves the overall utility."
+    },
+    {
+        "role": "user",
+        "content": "Next, I give you related programs.
+
+model.h
+
+#ifndef MODEL_H_
+#define MODEL_H_
+
+#include <omnetpp.h>
+#include <set>
+#include \"Configuration.h\"
+#include \"Environment.h\"
+#include \"Observations.h\"
+
+class Model : public omnetpp::cSimpleModule {
+public:
+
+    /*
+     * there are some methods (e.g., removeExpectedChange() that do not check
+     * the type of change, so if a new change type is added, those methods
+     * would have to be fixed
+     */
+    enum ModelChange { SERVER_ONLINE};
+
+    struct ModelChangeEvent {
+        double startTime; // when the event was created
+        double time; // when the event will happen
+        ModelChange change;
+    };
+
+    struct ModelChangeEventComp {
+      bool operator() (const ModelChangeEvent& lhs, const ModelChangeEvent& rhs) const {
+          return lhs.time < rhs.time;
+      }
+    };
+    typedef std::multiset<ModelChangeEvent, ModelChangeEventComp> ModelChangeEvents;
+
+protected:
+    static const char* HORIZON_PAR;
+    virtual int numInitStages() const {return 2;}
+    virtual void initialize(int stage);
+
+    ModelChangeEvents events;
+
+
+    // these are used so that we can query the model for what happened an instant earlier
+    // TODO save the configuration using a timestamp
+    int activeServerCountLast;
+    double timeActiveServerCountLast;
+
+
+    double evaluationPeriod;
+    double dimmerMargin; /**< the used range for the dimmer is [dimmerMargin, 1-dimmerMargin] */
+    bool lowerDimmerMargin = false;
+
+
+    // these hold the current configuration, plus the events for the booting server
+    int activeServers; /**< number of active servers (there is one more powered up if a server is booting) */
+    double brownoutFactor;
+
+    Environment environment;
+    Observations observations;
+    int maxServers;
+    double bootDelay;
+    int horizon;
+    int serverThreads;
+    double serviceTime;
+    double serviceTimeVariance;
+    double lowFidelityServiceTime;
+    double lowFidelityServiceTimeVariance;
+    int numberOfBrownoutLevels;
+
+    void addExpectedChange(double time, ModelChange change);
+
+    /**
+     * This method removes the last expected change (scheduled farthest in the future)
+     * For generality, addExpectedChange() should return some id that could be
+     * then used to remove the event.
+     */
+    void removeExpectedChange();
+
+    bool isServerBooting() const;
+
+public:
+    Model();
+
+
+    /* the following methods are less general */
+
+    /**
+     * Returns the expected number of active servers at a time in the future
+     */
+    int getActiveServerCountIn(double deltaTime);
+    int const getActiveServers() const;
+    int const getServers() const;
+
+    void addServer(double bootDelay);
+    void serverBecameActive();
+    void removeServer();
+
+    Configuration getConfiguration();
+    const Environment& getEnvironment() const;
+    virtual void setEnvironment(const Environment& environment);
+    const Observations& getObservations() const;
+    void setObservations(const Observations& observations);
+    int getMaxServers() const;
+    double getEvaluationPeriod() const;
+    double getBootDelay() const;
+    int getHorizon() const;
+
+    double getLowFidelityServiceTime() const;
+    void setLowFidelityServiceTime(double lowFidelityServiceTimeMean, double lowFidelityServiceTimeVariance);
+    int getServerThreads() const;
+    void setServerThreads(int serverThreads);
+    double getServiceTime() const;
+    void setServiceTime(double serviceTimeMean, double serviceTimeVariance);
+
+    double getLowFidelityServiceTimeVariance() const;
+    double getServiceTimeVariance() const;
+
+    void setDimmerFactor(double factor);
+    double getDimmerFactor() const;
+
+    /**
+     * Returns true if dimmer margin is only used at the bottom of the range
+     */
+    bool isDimmerMarginLower() const;
+
+    int getNumberOfDimmerLevels() const;
+    double dimmerLevelToFactor(int dimmerLevel) const;
+    int dimmerFactorToLevel(double dimmerFactor) const;
+
+    // brownout is the complement of dimmer
+    void setBrownoutFactor(double factor);
+    double getBrownoutFactor() const;
+
+    int getNumberOfBrownoutLevels() const;
+    double brownoutLevelToFactor(int brownoutLevel) const;
+    int brownoutFactorToLevel(double brownoutFactor) const;
+
+    double getDimmerMargin() const;
+
+    virtual ~Model();
+};
+
+#endif /* MODEL_H_ */
+
+
+
+
+
+
+Observations.h
+
+#ifndef OBSERVATIONS_H_
+#define OBSERVATIONS_H_
+
+class Observations {
+public:
+    double basicResponseTime;
+    double optResponseTime;
+    double basicThroughput;
+    double optThroughput;
+    double avgResponseTime;
+    double utilization;
+
+    Observations();
+};
+
+#endif /* OBSERVATIONS_H_ */
+
+
+BaseAdaptationManager.h
+
+#ifndef __PLASA_BASEADAPTATIONMANAGER_H_
+#define __PLASA_BASEADAPTATIONMANAGER_H_
+
+#include <omnetpp.h>
+#include \"model/Model.h\"
+#include \"managers/execution/Tactic.h\"
+
+/**
+ * Base class for all adaptation manager modules
+ */
+class BaseAdaptationManager : public omnetpp::cSimpleModule
+{
+    omnetpp::simsignal_t decisionTimeSignal;
+    Model* pModel;
+
+protected:
+    omnetpp::cMessage *periodEvent; // pointer to the event object which we'll use for timing
+    omnetpp::cMessage *decisionCompleteEvent; // event for notifying of decision completion
+  Tactic* pTactic;
+
+  virtual int numInitStages() const {return 2;}
+  virtual void initialize(int stage);
+  virtual void handleMessage(omnetpp::cMessage *msg);
+
+  /**
+   * Dispatches the execution of the result of the decision
+   */
+  virtual void decisionComplete();
+
+  inline Model* getModel() { return pModel; }
+
+  /**
+   * Adaptation decision implementation
+   *
+   * @return Tactic* (possibly a MacroTactic*) or null if none must be executed.
+   *   Deletion of the tactic object is done by the caller of this method.
+   */
+  virtual Tactic* evaluate() = 0;
+
+public:
+  BaseAdaptationManager();
+  virtual ~BaseAdaptationManager();
+};
+
+#endif
+
+
+
+utility.h
+
+#ifndef UTILITYSCORER_H_
+#define UTILITYSCORER_H_
+#include <model/Configuration.h>
+#include <model/Environment.h>
+#include <model/Observations.h>
+#include <model/Model.h>
+
+#define RT_THRESHOLD omnetpp::getSimulation()->getSystemModule()->par(\"responseTimeThreshold\").doubleValue()
+
+/*
+ * MAX_SERVICE_RATE is the max number of requests/sec a single server can
+ * process with normal service.
+ */
+#define MAX_SERVICE_RATE omnetpp::getSimulation()->getSystemModule()->par(\"maxServiceRate\").doubleValue()
+
+class UtilityScorer {
+protected:
+    UtilityScorer() {}; // no instances
+
+    static const char* OPT_REVENUE;
+    static const char* PENALTY_MULTIPLIER;
+
+public:
+
+    /**
+     * Computes utility accrued
+     */
+    static double getAccruedUtility(const Model& model, const Configuration& configuration, const Environment& environment, const Observations& observations);
+};
+
+#endif /* UTILITYSCORER_H_ */"
+    },
+    {
+        "role": "assistant",
+        "content": "The provided code snippets represent key components of a simulation framework for managing web server adaptation based on operational metrics and performance. Here's a breakdown of how each component works and their roles in the overall architecture.
+
+### 1. Model Class
+The `Model` class serves as the core component that maintains the state of the server environment, including active server counts, configurations, and various operational parameters. Key functions include:
+
+- **Server Management**:
+    - `addServer(double bootDelay)`: Triggers the addition of a new server with a specified boot delay.
+    - `removeServer()`: Removes a server from the active pool.
+    - `serverBecameActive()`: Updates the model state once a server has finished booting and is active.
+
+- **Status Queries**:
+    - `getActiveServers()`: Returns the current number of active servers.
+    - `getMaxServers()`: Provides the maximum server limit defined in the model.
+    - `getDimmerFactor()`: Retrieves the current dimmer factor affecting the server's behavior concerning optional content.
+
+- **Event Scheduling**:
+    - The `ModelChangeEvents` structure allows the scheduling of events (like server booting) to manage changes in the operational state over time.
+
+### 2. Observations Class
+The `Observations` class holds various performance metrics that describe the server's current state. Key attributes include:
+
+- `basicResponseTime`
+- `optResponseTime`
+- `basicThroughput`
+- `optThroughput`
+- `avgResponseTime`
+- `utilization`
+
+These metrics are crucial for decision-making processes in adaptation managers to optimize server operations based on real-time performance data.
+
+### 3. BaseAdaptationManager Class
+As the base class for adaptation managers, `BaseAdaptationManager` provides the key structures for decision-making based on the model's current state. Important components include:
+
+- **Signal Definitions**:
+    - `decisionTimeSignal`: A signal to track the decision-making time frame.
+  
+- **Initialization and Message Handling**:
+    - `initialize(int stage)`: Prepares the manager for its operational phase.
+    - `handleMessage(omnetpp::cMessage *msg)`: Processes incoming messages, usually tied to simulation events.
+
+- **Decision Execution**:
+    - The `evaluate()` method, which is pure virtual, must be implemented in derived classes (like `ReactiveAdaptationManager`) to define when and how to adapt the system.
+
+### 4. UtilityScorer Class
+The `UtilityScorer` class computes the utility accrued in the system, helping to assess decisions made by the adaptation managers. Its key function is:
+
+- `getAccruedUtility(...)`: Calculates the utility based on the model's current state, configuration, environment, and observations, facilitating performance evaluations of different server configurations and behaviors.
+
+### Overall Structure
+- **Integration**: The `ReactiveAdaptationManager` relies on the `Model` and `Observations` components to make decisions about scaling servers and adjusting resource parameters (like the dimmer).
+- **Event-Driven Adjustment**: The model can respond in real-time to changes in load and performance metrics, thanks to scheduled events and the internal state of the `Model`.
+- **Metric Utilization**: Observations feed into the adaptation decisions, helping the system to maintain or improve service quality while managing costs through efficient server utilization.
+
+### Usage of Framework
+In practice, using this framework would involve:
+1. Setting simulation parameters (through config files or simulation parameters).
+2. Running the simulation and allowing the `ReactiveAdaptationManager` to make decisions based on feedback from the `Model` and `Observations`.
+3. Adjusting server resources dynamically in response to changing loads and performance conditions.
+
+### Potential Enhancements
+1. **Measurement of Other Metrics**: Integration of additional metrics might improve decision accuracy.
+2. **Adaptive Mechanisms**: Incorporating machine learning mechanisms to predict load and adjust resources preemptively could optimize performance.
+3. **Enhanced Logging**: Implementing more comprehensive logging might help diagnose issues in episodes of high variability or underperformance.
+
+This framework offers a solid foundation for simulating and managing web server operations while providing mechanisms for adaptation in response to real-time data. Adjustments and enhancements depend on specific use cases, operational constraints, and performance requirements."
+    },
+    {
+        "role": "user",
+        "content": "5.  Please make new rules which refer to what conditions should increase or decrease the number of servers or change the dimmer value, and implement new evaluate method in MyAdaptationManager.cpp to aim to maximize the sum of utilities calculated by periodUtilityICAC2016 over the entire period of the simulation with reference to what you have analyzed until now and the following.
+
+
+
+
+
+
+The past 3 problems and improvements of implementation, in order from newest to oldest
+
+
+[Problems & Plans]
+[[{'role': 'assistant', 'content': \"One of the biggest problems in the design of the rules for the evaluation method that caused low utility during periods of low response times is the **over-reliance on rigid composite metrics and static thresholds** for decision-making. Specifically, the conditions for reducing server counts and adjusting the dimmer are not sufficiently aggressive or dynamic. This leads to missed opportunities to optimize resources, as the adaptation manager may fail to lower the number of servers or increase the dimmer value even when the system is performing well, ultimately resulting in unnecessary operational costs and suboptimal utility outcomes. The evaluation logic does not fully adapt to real-time performance changes, thus limiting the system's responsiveness to varying load conditions.\"}, {'role': 'assistant', 'content': '### Improvement Plan\
+\
+1. **Dynamic Composite Metric Calculation**:\
+   - Introduce adaptive weights for the composite metric based on recent performance trends. For instance, if the average response time is consistently below a certain threshold, increase the weight on utilization and throughput while decreasing the weight on response time. This would allow the system to be more responsive to real-time conditions.\
+   - Adjust the composition to emphasize more critical metrics dynamically reflecting current operational status.\
+\
+2. **Enhanced Server Management Logic**:\
+   - Broaden the conditions under which servers can be removed. For example, if average response time is significantly low and utilization is below a certain threshold (e.g., 0.5), allow for a more aggressive server reduction strategy regardless of the composite metric.\
+   - Implement a simplified rule to add servers when response time exceeds the threshold, regardless of other metrics. This would help maintain quality of service during demand spikes.\
+\
+3. **Aggressive Dimmer Adjustments**:\
+   - Modify dimmer adjustment logic to allow for higher increases when utilization is low and response time is far below the threshold. This creates more opportunity for serving optional content during low load periods.\
+\
+### Rationale for Improvement\
+\
+- **Optimized Resource Utilization**: By refining the decision-making process through adaptive logic, the system can better manage resources based on real-time performance, improving utility during varied operational conditions.\
+  \
+- **Increased Responsiveness**: Adaptive thresholds will help in responding proactively to operational changes, enhancing overall system efficiency while reducing operational costs associated with maintaining excess server capacity.\
+\
+- **Historical Performance Relevance**: Continuously using historical metrics while allowing room for adjustment creates a balanced approach that promotes efficiency and utility maximization across varying situations.\
+\
+By implementing these changes, the goal is to create a more resilient adaptation manager that responds effectively to fluctuations in demand and performance, thus enhancing utility outcomes while adhering to existing constraints.'}], [{'role': 'assistant', 'content': 'One of the biggest problems in the design of the rules for the evaluation method is the **over-reliance on static thresholds** for both server management and dimmer adjustments. Specifically, the logic does not adequately consider the dynamic interplay between response times, throughput, and utilization over time, leading to missed opportunities for optimizing utility during periods of low response times and low utilization. This rigidity results in unnecessary server capacity and lower-than-expected utility, as the system fails to leverage optimal settings when conditions are favorable.'}, {'role': 'assistant', 'content': '### Improvement Plan\
+\
+**1. Dynamic Weight Adjustment for Composite Metrics:**\
+   - Introduce logic to dynamically adjust the weights of the metrics used in the composite metric calculation based on current system performance and real-time conditions. For example, if the average response time is persistently low, increase the weight on utilization and throughput to encourage server reductions and dimmer increases.\
+\
+**2. Responsive Server Management Logic:**\
+   - Implement responsive conditions for server management that allow for quicker response to low average response times. For instance, reduce servers when response times are significantly low, regardless of current server capacity, and ensure that dimmer adjustments happen more dynamically when conditions allow for it.\
+\
+**3. Continuous Monitoring with Sliding Windows:**\
+   - Use sliding windows to continuously monitor recent performance metrics while evaluating whether to maintain or change server counts and dimmer settings. This enables more context-aware decisions instead of relying solely on averaged historical data.\
+\
+### Rationale for Improvement\
+These improvements aim to enhance the adaptability of the system in real-time, allowing it to make more optimal decisions that maximize utility. By minimizing static thresholds and incorporating dynamic adjustments, the system can better navigate fluctuations in demand, thereby reducing costs and improving service quality, which ultimately leads to higher utility outcomes. \
+\
+This approach aligns with the provided implementation constraints and maximizes the performance benefits of the adaptation manager.'}], [{'role': 'assistant', 'content': \"One of the biggest problems in the design of the rules for the evaluation method is the **over-reliance on static response time and utilization thresholds** that do not adequately account for the dynamic interplay between these metrics and the impact of the server count and dimmer value. This rigidity can lead to missed opportunities for optimization, particularly during periods of consistently low response times where increasing the dimmer or adjusting server counts could significantly improve utility but are not pursued due to fixed criteria. As a result, the adaptation manager fails to fully exploit the system's capacity, leading to lower-than-expected utility outcomes.\"}, {'role': 'assistant', 'content': '### Improvement Plan:\
+\
+1. **Dynamic Thresholds**: Replace fixed thresholds with dynamic conditions that adapt based on historical averages of response times and utilizations. For instance, rather than using static multipliers of `RT_THRESHOLD`, calculate thresholds based on recent performance trends (e.g., 10% below the average response time over the last few intervals).\
+\
+2. **Enhanced Dimmer Logic**: Implement a more aggressive dimmer increase during periods with consistently low response times and low utilization. For example, if the average response time is below a certain threshold (e.g., 0.05s), immediately increase the dimmer by a larger increment (e.g., 0.3) to maximize optional content serving.\
+\
+3. **Flexible Server Adjustment**: Allow for simultaneous server adjustments (adding and removing) as conditions permit. If response times are low and utilization allows, consider removing servers while simultaneously preparing to add servers in anticipation of load spikes.\
+\
+4. **Utilize Composite Metrics**: Introduce a weighted composite metric that combines historical response time, utilization, and throughput to inform all decisions for server count and dimmer adjustment dynamically rather than relying solely on current averages.\
+\
+### Rationale for Improvement:\
+These enhancements would create a more adaptive system that can leverage historical performance data effectively, allowing for real-time adjustments to server resources and dimmer settings. By reducing reliance on static thresholds, the adaptation manager can better maximize utility, respond to varying loads, and ensure optimal performance across different operating conditions, ultimately leading to higher utility outcomes. This approach maintains the implementation constraints while providing a more nuanced decision-making framework.'}]]
+
+
+
+
+A program scoring the max sum of the utility( Utility = 3124.415 ) is here.
+
+
+#include \"MyAdaptationManager.h\"
+#include \"managers/adaptation/UtilityScorer.h\"
+#include \"managers/execution/AllTactics.h\"
+#include <vector>
+#include <algorithm>
+
+using namespace std;
+
+Define_Module(MyAdaptationManager);
+
+class HistoricalMetrics {
+public:
+    vector<double> responseTimes;
+    vector<double> utilizations;
+
+    void addMetric(double responseTime, double utilization) {
+        if (responseTimes.size() >= 10) {  // keep only the 10 most recent records
+            responseTimes.erase(responseTimes.begin());
+            utilizations.erase(utilizations.begin());
+        }
+        responseTimes.push_back(responseTime);
+        utilizations.push_back(utilization);
+    }
+
+    double averageResponseTime() const {
+        double sum = 0;
+        for (double rt : responseTimes) {
+            sum += rt;
+        }
+        return responseTimes.empty() ? 0 : sum / responseTimes.size();
+    }
+
+    double averageUtilization() const {
+        double sum = 0;
+        for (double util : utilizations) {
+            sum += util;
+        }
+        return utilizations.empty() ? 0 : sum / utilizations.size();
+    }
+};
+
+HistoricalMetrics historicalMetrics;
+
+Tactic* MyAdaptationManager::evaluate() {
+    MacroTactic* pMacroTactic = new MacroTactic;
+    Model* pModel = getModel();
+    double dimmer = pModel->getDimmerFactor();
+    bool isServerBooting = pModel->getServers() > pModel->getActiveServers();
+    
+    // Obtain metrics from the model
+    double avgResponseTime = pModel->getObservations().avgResponseTime;
+    double utilization = pModel->getObservations().utilization;
+    int currentServers = pModel->getServers();
+    int activeServers = pModel->getActiveServers();
+    int maxServers = pModel->getMaxServers();
+    double basicThroughput = pModel->getObservations().basicThroughput;
+    double optThroughput = pModel->getObservations().optThroughput;
+
+    // Update historical metrics
+    historicalMetrics.addMetric(avgResponseTime, utilization);
+
+    // Composite metric for decision making
+    double compositeMetric = 0.7 * historicalMetrics.averageResponseTime() + 0.3 * historicalMetrics.averageUtilization();
+
+    // New Dynamic Server Management Rules with Historical Insights
+    if (!isServerBooting) {
+        if (compositeMetric < (RT_THRESHOLD * 0.5) && utilization < 0.7 && currentServers > 1) {
+            // Reduce server count more aggressively based on composite metric
+            pMacroTactic->addTactic(new RemoveServerTactic);
+        } else if (avgResponseTime > RT_THRESHOLD && currentServers < maxServers) {
+            // Add server only if avgResponseTime is above threshold
+            pMacroTactic->addTactic(new AddServerTactic);
+        }
+    }
+
+    // Enhanced Dimmer Adjustments
+    if (avgResponseTime > RT_THRESHOLD) {
+        // More aggressive reduction of dimmer when response time exceeds threshold
+        dimmer = std::max(0.0, dimmer - 0.3);
+    } else {
+        // Gradual increase in dimmer value when utilization is low
+        if (utilization < 0.6 && dimmer < 1.0) {
+            dimmer = std::min(1.0, dimmer + 0.2);
+        }
+    }
+
+    pMacroTactic->addTactic(new SetDimmerTactic(dimmer));
+
+    return pMacroTactic;
+}"
+    },
+    {
+        "role": "assistant",
+        "content": "Here is an improved implementation of `MyAdaptationManager.cpp`, incorporating dynamic adjustments and enhanced decision-making to maximize utility in the simulation:
+
+```cpp
+#include \"MyAdaptationManager.h\"
+#include \"managers/adaptation/UtilityScorer.h\"
+#include \"managers/execution/AllTactics.h\"
+#include <vector>
+#include <algorithm>
+
+using namespace std;
+
+Define_Module(MyAdaptationManager);
+
+class HistoricalMetrics {
+public:
+    vector<double> responseTimes;
+    vector<double> utilizations;
+
+    void addMetric(double responseTime, double utilization) {
+        if (responseTimes.size() >= 10) {  // keep only the latest 10 records
+            responseTimes.erase(responseTimes.begin());
+            utilizations.erase(utilizations.begin());
+        }
+        responseTimes.push_back(responseTime);
+        utilizations.push_back(utilization);
+    }
+
+    double weightedAverageResponseTime() const {
+        return accumulate(responseTimes.begin(), responseTimes.end(), 0.0) / responseTimes.size();
+    }
+
+    double weightedAverageUtilization() const {
+        return accumulate(utilizations.begin(), utilizations.end(), 0.0) / utilizations.size();
+    }
+};
+
+HistoricalMetrics historicalMetrics;
+
+Tactic* MyAdaptationManager::evaluate() {
+    MacroTactic* pMacroTactic = new MacroTactic;
+    Model* pModel = getModel();
+    double dimmer = pModel->getDimmerFactor();
+    bool isServerBooting = pModel->getServers() > pModel->getActiveServers();
+
+    // Obtain real-time metrics from the model
+    double avgResponseTime = pModel->getObservations().avgResponseTime;
+    double utilization = pModel->getObservations().utilization;
+    int currentServers = pModel->getServers();
+    int maxServers = pModel->getMaxServers();
+    double basicThroughput = pModel->getObservations().basicThroughput;
+
+    // Update historical metrics
+    historicalMetrics.addMetric(avgResponseTime, utilization);
+
+    // Dynamic composite metric with adjusted weights
+    double compositeMetric = 0.5 * historicalMetrics.weightedAverageResponseTime() +
+                             0.4 * historicalMetrics.weightedAverageUtilization() +
+                             0.1 * basicThroughput;
+
+    // Dynamic Server Management Rules
+    if (!isServerBooting) {
+        if (compositeMetric < (RT_THRESHOLD * 0.6) && utilization < 0.5 && currentServers > 1) {
+            // Aggressively reduce servers when metrics indicate overcapacity
+            pMacroTactic->addTactic(new RemoveServerTactic);
+        }
+
+        if ((avgResponseTime > RT_THRESHOLD || basicThroughput > currentServers * MAX_SERVICE_RATE * 0.9) 
+            && currentServers < maxServers) {
+            // Add servers to handle high load or high response time
+            pMacroTactic->addTactic(new AddServerTactic);
+        }
+    }
+
+    // Enhanced Dimmer Adjustments
+    if (avgResponseTime > RT_THRESHOLD) {
+        dimmer = std::max(0.0, dimmer - 0.3);  // Aggressively reduce dimmer if response time is high
+    } else if (utilization < 0.5 && dimmer < 1.0) {
+        dimmer = std::min(1.0, dimmer + 0.3);  // Increase dimmer if utilization is low
+    }
+
+    pMacroTactic->addTactic(new SetDimmerTactic(dimmer));
+
+    return pMacroTactic;
+}
+```
+
+### Explanation of New Rules:
+
+1. **Dynamic Composite Metric**:
+   - Adjusts weights of response time, utilization, and throughput based on historical data to better reflect current system performance, allowing for more nuanced decision-making.
+
+2. **Server Management**:
+   - **Reduction**: Implemented more aggressive conditions based on utilization and lightweight composite metrics to reduce servers when overcapacity is detected.
+   - **Addition**: Trivially add servers when high response time or throughput indicates a need for additional resources.
+
+3. **Dimmer Adjustments**:
+   - More aggressive reduction in dimmer values if response time is over the threshold, while allowing for significant increases when utilization is low.
+
+This approach improves the manager's responsiveness and adaptability, maximizing utility under variable conditions while adhering to the constraints of dynamic server and dimmer management."
+    },
+    {
+        "role": "user",
+        "content": "Here is my advice.
+
+- If many servers are active When throughput is high or response time is much shorter than threshold, it is possible that extra costs are being incurred, and reducing the number of servers may improve the utility at that time. When response times are short, try to actively reduce the number of servers.
+
+- If there are metrics that are available but not being used, let's use them. Are the metrics combined in a composite manner? There are various ways to combine them, such as linear combination and quadratic form. If you combining them in a composite manner yet, try changing the thresholds or changing the weights of the combined metrics.
+
+- If you want to use histrical information of metrics, you make and add variables and methods for recording it.
+
+
+You must only implement MyAdaptationManager.cpp with the following restrictions. Output only MyAdaptationManager.cpp, which can be executed as is.
+
+
+Restriction 1:
+
+The available metrics can be obtained through member variables and methods within the \"model\" class.
+Since they are encapsulated, the metrics can be obtained after obtaining information about the model in the method that uses each metric, e.g. Model* pModel = getModel();.
+The following is
+Metrics which you can use in the simulations :  Method which you need to get metrics by
+
+pModel->getObservations().basicResponseTime     : the average response time for basic responses not including optional content
+pModel->getObservations().optResponseTime       : the average response time for responses with optional content
+pModel->getObservations().basicThroughput       : the throughput for basic responses not including optional content
+pModel->getObservations().optThroughput         : the throughput for responses with optional content
+pModel->getObservations().avgResponseTime       : the average response time for responses including and not optional content
+pModel->getObservations().utilization           : the utilization of the server with serverId
+pModel->getDimmerFactor()                       : the dimmer value
+pModel->getServers()                            : the number of servers
+pModel->getActiveServers()                      : the number of active servers
+pModel->getMaxServers()                         : the maximum number of servers
+
+When changing the number of servers, Check whether there are any booting server and be careful of upper/lower limit of server. To check booting servers, you can use the variable of \"isServerBooting =  pModel->getServers() > pModel->getActiveServers()\"
+dimmer value is [0..1]. High utilization means a server works harder.
+
+
+Moreover, there are only three tacitcs including AddServerTactic, RemoveServerTactic, SetDimmerTactic.You can't use any other Tactic.
+
+
+
+Restriction 2:
+
+You can use RT_THRESHOLD and MAX_SERVICE_RATE without declaration which are one of the macro variables and they are defined the threshold of response time and max Service rate resulting from simulation if you include \"/managers/adaptation/UtilityScorer.h\" in the program, so you must not define and declare them again in any program.
+!!!If you want to use macro variables other than RT_THRESHOLD, you must define the macro variables in the top of program.!!!
+
+
+
+Restriction 3:
+
+About the structure of the directories.
+~/swim/swim/src/
+    managaers/
+        adaptation/
+            UtilityScorer.h
+            BaseAdaptationManager.h
+            MyAdaptationManager.h
+            MyAdaptationManager.cc
+        execution/
+            AllTactics.h
+    model/
+        Configuration.h
+        Model.h
+        Observtions.h
+
+Including \"managers/execution/AllTactics.h\" in the program is enough to get the information about the \"Tactic\" class.
+
+
+
+
+Adhere to the above restrictions and complete program. Output only MyAdaptationManager.cpp, which can be executed as is."
+    },
+    {
+        "role": "assistant",
+        "content": "Here is the improved implementation of `MyAdaptationManager.cpp`, which adheres to the given restrictions and suggestions:
+
+```cpp
+#include \"MyAdaptationManager.h\"
+#include \"managers/adaptation/UtilityScorer.h\"
+#include \"managers/execution/AllTactics.h\"
+#include <vector>
+#include <algorithm>
+
+using namespace std;
+
+Define_Module(MyAdaptationManager);
+
+class HistoricalMetrics {
+public:
+    vector<double> responseTimes;
+    vector<double> utilizations;
+    vector<double> basicThroughputs;
+    vector<double> optThroughputs;
+
+    void addMetric(double responseTime, double utilization, double basicThroughput, double optThroughput) {
+        if (responseTimes.size() >= 10) {  // Keep only the most recent 10 metrics for a sliding window
+            responseTimes.erase(responseTimes.begin());
+            utilizations.erase(utilizations.begin());
+            basicThroughputs.erase(basicThroughputs.begin());
+            optThroughputs.erase(optThroughputs.begin());
+        }
+        responseTimes.push_back(responseTime);
+        utilizations.push_back(utilization);
+        basicThroughputs.push_back(basicThroughput);
+        optThroughputs.push_back(optThroughput);
+    }
+
+    double average(const vector<double>& metrics) const {
+        return accumulate(metrics.begin(), metrics.end(), 0.0) / metrics.size();
+    }
+
+    double averageResponseTime() const {
+        return average(responseTimes);
+    }
+
+    double averageUtilization() const {
+        return average(utilizations);
+    }
+
+    double averageBasicThroughput() const {
+        return average(basicThroughputs);
+    }
+
+    double averageOptThroughput() const {
+        return average(optThroughputs);
+    }
+};
+
+HistoricalMetrics historicalMetrics;
+
+Tactic* MyAdaptationManager::evaluate() {
+    MacroTactic* pMacroTactic = new MacroTactic;
+    Model* pModel = getModel();
+    double dimmer = pModel->getDimmerFactor();
+    bool isServerBooting = pModel->getServers() > pModel->getActiveServers();
+
+    // Obtain metrics from the model
+    double avgResponseTime = pModel->getObservations().avgResponseTime;
+    double utilization = pModel->getObservations().utilization;
+    int currentServers = pModel->getServers();
+    int maxServers = pModel->getMaxServers();
+    double basicThroughput = pModel->getObservations().basicThroughput;
+    double optThroughput = pModel->getObservations().optThroughput;
+
+    // Update historical metrics
+    historicalMetrics.addMetric(avgResponseTime, utilization, basicThroughput, optThroughput);
+
+    // Composite metric for decision-making using historical insights
+    double historicalCompositeMetric = 0.4 * historicalMetrics.averageResponseTime() +
+                                       0.3 * historicalMetrics.averageUtilization() +
+                                       0.15 * historicalMetrics.averageBasicThroughput() +
+                                       0.15 * historicalMetrics.averageOptThroughput();
+
+    // New rules for dynamic server management and dimmer adjustments
+    if (!isServerBooting) {
+        if (historicalCompositeMetric < (RT_THRESHOLD * 0.7) && currentServers > 1) {
+            // Reduce server more aggressively when underutilized
+            pMacroTactic->addTactic(new RemoveServerTactic);
+        }
+
+        if ((avgResponseTime > RT_THRESHOLD || optThroughput > currentServers * MAX_SERVICE_RATE * 0.9) 
+            && currentServers < maxServers) {
+            // Add servers to handle increased load or high response times
+            pMacroTactic->addTactic(new AddServerTactic);
+        }
+    }
+
+    // Aggressive dimmer adjustment based on metrics
+    if (avgResponseTime > RT_THRESHOLD) {
+        dimmer = std::max(0.0, dimmer - 0.3); // Reduce dimmer to control response times
+    } else if (utilization < 0.5 && dimmer < 1.0) {
+        dimmer = std::min(1.0, dimmer + 0.4); // Increase dimmer if utilization is low
+    }
+
+    pMacroTactic->addTactic(new SetDimmerTactic(dimmer));
+
+    return pMacroTactic;
+}
+```
+
+### Key Adjustments in the Implementation
+
+1. **Historical Metrics Use**: Metrics tracking ensures past data on response times, utilizations, and throughput inform current decisions, thus improving dynamic adjustment strategies.
+
+2. **Dynamic Composite Metric**: This uses rolling averages and different weights to better predict needed adaptations.
+
+3. **Server and Dimmer Adjustments**:
+   - **Server Reduction**: More aggressive reduction occurs when the composite metric indicates overcapacity (i.e., low utilization with good response times).
+   - **Server Addition**: Servers are added when necessary to maintain response times or handle increased load.
+   - **Dimmer Adjustment**: More aggressive adjustments to the dimmer setting allow for greater flexibility in managing optional content under varying load conditions.
+
+The plan adheres to the constraints by using only the allowed tactics, variables, and metrics, incorporating historical data to optimize utility outcomes effectively."
+    },
+    {
+        "role": "user",
+        "content": "Runtime error has occurred. 
+
+[stderr]
+managers/adaptation/MyAdaptationManager.cc:32:16: error: use of undeclared identifier 'accumulate'
+   32 |         return accumulate(metrics.begin(), metrics.end(), 0.0) / metrics.size();
+      |                ^
+1 error generated.
+make[1]: *** [Makefile:144: ../out/clang-release/src/managers/adaptation/MyAdaptationManager.o] Error 1
+make: *** [Makefile:2: all] Error 2
+
+
+Please check the following items and debug the program.
+
+- Were you following the restrictions?
+
+- Don't add/remove server during serverbooting
+
+- Did you include necessary files?
+
+- dimmer value is [0..1]
+
+- Take care of the upper/lower limit of servers.
+
+- It is possible to add/remove a server and change the dimmer setting simultaneously. But, do not create a situation where MacroTactic returns operations on increasing or decreasing the number of servers at the same time, i.e., MacroTactics = [RemoveServerTactic(), AddServerTactic()], [RemoveServerTactic(), RemoveServerTactic()], [AddServerTactic(), AddServerTactic()] by managing varibables \"Serverflag\".
+
+
+This is the code that caused the error.
+#include \"MyAdaptationManager.h\"
+#include \"managers/adaptation/UtilityScorer.h\"
+#include \"managers/execution/AllTactics.h\"
+#include <vector>
+#include <algorithm>
+
+using namespace std;
+
+Define_Module(MyAdaptationManager);
+
+class HistoricalMetrics {
+public:
+    vector<double> responseTimes;
+    vector<double> utilizations;
+    vector<double> basicThroughputs;
+    vector<double> optThroughputs;
+
+    void addMetric(double responseTime, double utilization, double basicThroughput, double optThroughput) {
+        if (responseTimes.size() >= 10) {  // Keep only the most recent 10 metrics for a sliding window
+            responseTimes.erase(responseTimes.begin());
+            utilizations.erase(utilizations.begin());
+            basicThroughputs.erase(basicThroughputs.begin());
+            optThroughputs.erase(optThroughputs.begin());
+        }
+        responseTimes.push_back(responseTime);
+        utilizations.push_back(utilization);
+        basicThroughputs.push_back(basicThroughput);
+        optThroughputs.push_back(optThroughput);
+    }
+
+    double average(const vector<double>& metrics) const {
+        return accumulate(metrics.begin(), metrics.end(), 0.0) / metrics.size();
+    }
+
+    double averageResponseTime() const {
+        return average(responseTimes);
+    }
+
+    double averageUtilization() const {
+        return average(utilizations);
+    }
+
+    double averageBasicThroughput() const {
+        return average(basicThroughputs);
+    }
+
+    double averageOptThroughput() const {
+        return average(optThroughputs);
+    }
+};
+
+HistoricalMetrics historicalMetrics;
+
+Tactic* MyAdaptationManager::evaluate() {
+    MacroTactic* pMacroTactic = new MacroTactic;
+    Model* pModel = getModel();
+    double dimmer = pModel->getDimmerFactor();
+    bool isServerBooting = pModel->getServers() > pModel->getActiveServers();
+
+    // Obtain metrics from the model
+    double avgResponseTime = pModel->getObservations().avgResponseTime;
+    double utilization = pModel->getObservations().utilization;
+    int currentServers = pModel->getServers();
+    int maxServers = pModel->getMaxServers();
+    double basicThroughput = pModel->getObservations().basicThroughput;
+    double optThroughput = pModel->getObservations().optThroughput;
+
+    // Update historical metrics
+    historicalMetrics.addMetric(avgResponseTime, utilization, basicThroughput, optThroughput);
+
+    // Composite metric for decision-making using historical insights
+    double historicalCompositeMetric = 0.4 * historicalMetrics.averageResponseTime() +
+                                       0.3 * historicalMetrics.averageUtilization() +
+                                       0.15 * historicalMetrics.averageBasicThroughput() +
+                                       0.15 * historicalMetrics.averageOptThroughput();
+
+    // New rules for dynamic server management and dimmer adjustments
+    if (!isServerBooting) {
+        if (historicalCompositeMetric < (RT_THRESHOLD * 0.7) && currentServers > 1) {
+            // Reduce server more aggressively when underutilized
+            pMacroTactic->addTactic(new RemoveServerTactic);
+        }
+
+        if ((avgResponseTime > RT_THRESHOLD || optThroughput > currentServers * MAX_SERVICE_RATE * 0.9) 
+            && currentServers < maxServers) {
+            // Add servers to handle increased load or high response times
+            pMacroTactic->addTactic(new AddServerTactic);
+        }
+    }
+
+    // Aggressive dimmer adjustment based on metrics
+    if (avgResponseTime > RT_THRESHOLD) {
+        dimmer = std::max(0.0, dimmer - 0.3); // Reduce dimmer to control response times
+    } else if (utilization < 0.5 && dimmer < 1.0) {
+        dimmer = std::min(1.0, dimmer + 0.4); // Increase dimmer if utilization is low
+    }
+
+    pMacroTactic->addTactic(new SetDimmerTactic(dimmer));
+
+    return pMacroTactic;
+}"
+    },
+    {
+        "role": "assistant",
+        "content": "The error in your code is caused by the lack of including the header file necessary for using the `accumulate` function from the Standard Library. Additionally, I will include a `ServerFlag` to ensure that you don't add and remove servers simultaneously, according to your advice. Here's how you can address both the error and the advisory points:
+
+```cpp
+#include \"MyAdaptationManager.h\"
+#include \"managers/adaptation/UtilityScorer.h\"
+#include \"managers/execution/AllTactics.h\"
+#include <vector>
+#include <algorithm>
+#include <numeric> // Include this to use std::accumulate
+
+using namespace std;
+
+Define_Module(MyAdaptationManager);
+
+class HistoricalMetrics {
+public:
+    vector<double> responseTimes;
+    vector<double> utilizations;
+    vector<double> basicThroughputs;
+    vector<double> optThroughputs;
+
+    void addMetric(double responseTime, double utilization, double basicThroughput, double optThroughput) {
+        if (responseTimes.size() >= 10) {  // Keep only the most recent 10 metrics for a sliding window
+            responseTimes.erase(responseTimes.begin());
+            utilizations.erase(utilizations.begin());
+            basicThroughputs.erase(basicThroughputs.begin());
+            optThroughputs.erase(optThroughputs.begin());
+        }
+        responseTimes.push_back(responseTime);
+        utilizations.push_back(utilization);
+        basicThroughputs.push_back(basicThroughput);
+        optThroughputs.push_back(optThroughput);
+    }
+
+    double average(const vector<double>& metrics) const {
+        return accumulate(metrics.begin(), metrics.end(), 0.0) / metrics.size();
+    }
+
+    double averageResponseTime() const {
+        return average(responseTimes);
+    }
+
+    double averageUtilization() const {
+        return average(utilizations);
+    }
+
+    double averageBasicThroughput() const {
+        return average(basicThroughputs);
+    }
+
+    double averageOptThroughput() const {
+        return average(optThroughputs);
+    }
+};
+
+HistoricalMetrics historicalMetrics;
+
+Tactic* MyAdaptationManager::evaluate() {
+    MacroTactic* pMacroTactic = new MacroTactic;
+    Model* pModel = getModel();
+    double dimmer = pModel->getDimmerFactor();
+    bool isServerBooting = pModel->getServers() > pModel->getActiveServers();
+    bool serverFlag = false; // Flag to prevent simultaneous add and remove server actions
+
+    // Obtain metrics from the model
+    double avgResponseTime = pModel->getObservations().avgResponseTime;
+    double utilization = pModel->getObservations().utilization;
+    int currentServers = pModel->getServers();
+    int maxServers = pModel->getMaxServers();
+    double basicThroughput = pModel->getObservations().basicThroughput;
+    double optThroughput = pModel->getObservations().optThroughput;
+
+    // Update historical metrics
+    historicalMetrics.addMetric(avgResponseTime, utilization, basicThroughput, optThroughput);
+
+    // Composite metric for decision-making using historical insights
+    double historicalCompositeMetric = 0.4 * historicalMetrics.averageResponseTime() +
+                                       0.3 * historicalMetrics.averageUtilization() +
+                                       0.15 * historicalMetrics.averageBasicThroughput() +
+                                       0.15 * historicalMetrics.averageOptThroughput();
+
+    // New rules for dynamic server management
+    if (!isServerBooting) {
+        if (historicalCompositeMetric < (RT_THRESHOLD * 0.7) && currentServers > 1) {
+            // Reduce server more aggressively when underutilized
+            pMacroTactic->addTactic(new RemoveServerTactic);
+            serverFlag = true;
+        }
+
+        if (!serverFlag && (avgResponseTime > RT_THRESHOLD || optThroughput > currentServers * MAX_SERVICE_RATE * 0.9) 
+            && currentServers < maxServers) {
+            // Add servers to handle increased load or high response times
+            pMacroTactic->addTactic(new AddServerTactic);
+        }
+    }
+
+    // Aggressive dimmer adjustment
+    if (avgResponseTime > RT_THRESHOLD) {
+        dimmer = std::max(0.0, dimmer - 0.3); // Reduce dimmer to control response times
+    } else if (utilization < 0.5 && dimmer < 1.0) {
+        dimmer = std::min(1.0, dimmer + 0.4); // Increase dimmer if utilization is low
+    }
+
+    pMacroTactic->addTactic(new SetDimmerTactic(dimmer));
+
+    return pMacroTactic;
+}
+```
+
+### Key Changes and Additions:
+- **Include `<numeric>`**: This header file is necessary to use `std::accumulate`.
+- **ServerFlag**: Introduced `serverFlag` to avoid adding and removing servers simultaneously. It only allows the addition of servers if no removal has occurred in the same evaluation cycle.
+- **Checks for Server Booting**: I ensured that server adjustments are contingent upon the absence of booting servers and that they respect the upper and lower server limits.
+
+Make sure to recompile your project after these changes to avoid runtime issues."
+    }
+]

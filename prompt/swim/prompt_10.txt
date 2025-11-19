@@ -1,0 +1,93 @@
+### 更新２回目以降###
+
+### Analyzer ###
+### add information about hostorical program and best program ###
+過去 [xxxx] 個の実装していただいたevaluationメソッドとそのプログラムを改善する点は古い順に
+
+
+[PROG]
+[RECONSIDERATION]
+
+[PROG]
+[RECONSIDERATION]
+
+[PROG]
+[RECONSIDERATION]
+
+[PROG]
+[RECONSIDERATION]
+
+[PROG]
+[RECONSIDERATION]
+
+
+
+utilityの合計値が最も高かったプログラムは
+[PROG]
+
+その改善点は
+[RECONSIDERATION]
+
+そのシミュレーション結果のutilityの合計値は [UTILITY] でした。
+
+
+
+
+今回実装していただいた最新のプログラムでのシミュレーションの結果、utilityの合計値は [UTILITY] でした。
+
+また、各時間との関係は以下のようになりました。
+
+[CSV]
+
+
+
+### Planner ###
+utilityの値の合計値を大きくすることを目標とした新しいMyAdaptationManage::evaluate()の改善の参考にして下さい。
+
+1.
+throghputが大きい時やResponseTimeが短い時にサーバーがたくさん起動している時は、コストが余計にかかってしまっている可能性があるのでサーバーの数を減らすとさらに改善するかもしれません。
+
+2.
+メトリクスを複合的に組み合わせていますか。線型結合や二次形式など様々な組み合わせ方があります。
+もし複合的に組み合わせていたら、閾値を変えてみたり、メトリクスの重みを変えてみたりしてみましょう。
+
+3.
+使用可能なのに使っていないメトリクスがあれば使ってみましょう。
+
+4.
+複数のTactic操作を並行して行えることに注目しましょう。
+
+例えば以下のようなプログラムがあったとき、
+
+if (responseTime > RT_THRESHOLD) {
+    if (!isServerBooting
+            && pModel->getServers() < pModel->getMaxServers()) {
+        pMacroTactic->addTactic(new AddServerTactic);
+        if (dimmer > 0.0) {
+            dimmer = max(0.0, dimmer - dimmerStep);
+            pMacroTactic->addTactic(new SetDimmerTactic(dimmer));
+        }
+    }
+}
+return pMacroTactic;
+
+
+response時間が閾値より大きく、サーバーが起動中ではなく、dimmer値が0より大きい場合にevaluateメソッドは MacroTactic = [AddServerTactic(), SetDimmerTactic()] を返します。
+
+つまり、サーバーの数の変更とdimmer値の調整を一回の操作でできるということです。実装の仕方によってはMacroTactic = [AddServerTactic(), AddServerTactic()]も可能です。
+
+逆の状況でも、 MacroTactic = [RemoveServerTactic(), SetDimmerTactic()] を返すことができれば、サーバーを減らしつつdimmerの調整ができて効率よくutilityを調整できると思います。
+
+
+
+
+### CoT ###
+
+1.最新の結果を見るとどの時間帯にutilityが低くなっているか一箇所選んでください。
+
+
+
+
+
+
+[Next prompt_5.txt]

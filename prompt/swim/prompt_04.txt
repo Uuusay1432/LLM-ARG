@@ -1,0 +1,51 @@
+### １回目 ###
+
+### Analyzer ###
+シミュレーション結果は、
+時間(Time), 平均応答時間(avgResponseTime),サーバーの数(Servers),activeサーバーの数(ActiveServers),Dimmer(Dimmer),時間に対応する効用関数の値(Utility)
+の関係がスペース区切りの表形式で与えられます。
+
+utilityを上げるためにはdimmerを大きくして、サーバーの数(コスト)を少なくして、レスポンス時間を短くすることが求められる。しかし、dimmerあげるとレスポンス時間が長くなることがある。サーバーの数を増やすとレスポンス時間が長くなる、
+
+これらの方針は,pMacroTactic->addTactic()によって実現されます。
+サーバーを増やすとき:       pMacroTactic->addTactic(new AddServerTactic);
+dimmerの値を更新するとき:   pMacroTactic->addTactic(new SetDimmerTactic(dimmer))
+サーバーを減らすとき:       pMacroTactic->addTactic(new RemoveServerTactic)
+
+
+今回実装していただいたevaluationメソッド
+
+
+
+[PROG]
+
+
+
+
+でのシミュレーションの結果、utilityの合計値は [UTILITY] でした。
+
+
+
+結果を提供します。
+[CSV]
+
+
+
+### CoT ###
+
+1.結果を見るとどの時間帯にutilityが低くなっているか一箇所選んでください。
+
+
+2.その時間帯に低いutilityになってしまった原因はなんでしょうか。
+
+
+3.その原因を引き起こしてしまったevaluationメソッドでのルール設計において一番大きな問題は何でしょうか。
+
+
+4.コードで特定するとどの箇所になるでしょうか。
+
+
+5.その部分の改善方針と、そのように改善する理由を教えてください。
+
+
+6.それを踏まえて、utilityの合計値を大きくすることを目標に、新しいevaluationメソッドを実装してみましょう。

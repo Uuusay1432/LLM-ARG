@@ -1,0 +1,73 @@
+5.  Please make new rules which refer to what conditions should increase or decrease the number of servers or change the dimmer value, and implement new evaluate method in MyAdaptationManager.cpp to aim to maximize the sum of utilities calculated by periodUtilityICAC2016 over the entire period of the simulation with reference to what you have analyzed until now and the following my advice. Output only MyAdaptationManager.cpp, which can be executed as is.
+
+
+
+
+!- When response times are short, try to actively reduce the number of servers.
+!- If there are metrics that are available but not being used, let's use them and make more combined metrics.
+!- Try changing the thresholds and the weights of the combined metrics.
+!- Multiple Tactic operations can be executed in parallel if a evaluate method execute addTactic method few times.
+! - If you want to use histrical information of metrics, you make and add variables for recording it.
+
+
+
+
+
+
+
+Restriction 1:
+
+The available metrics can be obtained through member variables and methods within the "model" class.
+Since they are encapsulated, the metrics can be obtained after obtaining information about the model in the method that uses each metric, e.g. Model* pModel = getModel();.
+The following is
+Metrics which you can use in the simulations :  Method which you need to get metrics by
+
+pModel->getObservations().basicResponseTime     : the average response time for basic responses not including optional content
+pModel->getObservations().optResponseTime       : the average response time for responses with optional content
+pModel->getObservations().basicThroughput       : the throughput for basic responses not including optional content
+pModel->getObservations().optThroughput         : the throughput for responses with optional content
+pModel->getObservations().avgResponseTime       : the average response time for responses including and not optional content
+pModel->getObservations().utilization           : the utilization of the server with serverId
+pModel->getDimmerFactor()                       : the dimmer value
+pModel->getServers()                            : the number of servers
+pModel->getActiveServers()                      : the number of active servers
+pModel->getMaxServers()                         : the maximum number of servers
+
+When changing the number of servers, Check whether there are any booting server and be careful of upper/lower limit of server. To check booting servers, you can use the variable of "isServerBooting =  pModel->getServers() > pModel->getActiveServers()"
+dimmer value is [0..1]. High utilization means a server works harder.
+
+
+Moreover, there are only three tacitcs including AddServerTactic, RemoveServerTactic, SetDimmerTactic.You can't use any other Tactic.
+
+
+
+Restriction 2:
+
+You can use RT_THRESHOLD and MAX_SERVICE_RATE without declaration which are one of the macro variables and they are defined the threshold of response time and max Service rate resulting from simulation if you include "/managers/adaptation/UtilityScorer.h" in the program, so you must not define and declare them again in any program.
+!!!If you want to use macro variables other than RT_THRESHOLD, you must define the macro variables in the top of program.!!!
+
+
+
+Restriction 3:
+
+About the structure of the directories.
+~/swim/swim/src/
+    managaers/
+        adaptation/
+            UtilityScorer.h
+            BaseAdaptationManager.h
+            MyAdaptationManager.h
+            MyAdaptationManager.cc
+        execution/
+            AllTactics.h
+    model/
+        Configuration.h
+        Model.h
+        Observtions.h
+
+Including "managers/execution/AllTactics.h" in the program is enough to get the information about the "Tactic" class.
+
+
+
+
+Adhere to the above restrictions and complete program. Output only MyAdaptationManager.cpp, which can be executed as is.
