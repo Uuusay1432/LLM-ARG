@@ -1,5 +1,0 @@
-2. What is one of the biggest problem in the design of the rules for the evaluation method that caused this? Please keep it brief.
-
-Your code is here.
-[PROGRAM]
-{PROGRAM}

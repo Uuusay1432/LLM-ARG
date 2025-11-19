@@ -1,5 +1,0 @@
-3. Which part of the code would you identify as the cause of the problem?
-
-Your code is here.
-[PROGRAM]
-{PROGRAM}
