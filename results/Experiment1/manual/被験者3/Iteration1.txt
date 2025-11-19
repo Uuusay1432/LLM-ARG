@@ -1,0 +1,46 @@
+#include "MyAdaptationManager.h"
+#include "managers/adaptation/UtilityScorer.h"
+#include "managers/execution/AllTactics.h"
+
+using namespace std;
+
+Define_Module(MyAdaptationManager);
+
+Tactic* MyAdaptationManager::evaluate() {
+    MacroTactic* pMacroTactic = new MacroTactic;
+    Model* pModel = getModel();
+    const double dimmerStep = 1.0 / (pModel->getNumberOfDimmerLevels() - 1);
+    double dimmer = pModel->getDimmerFactor();
+    bool isServerBooting = pModel->getServers() > pModel->getActiveServers();
+    double responseTime = pModel->getObservations().avgResponseTime;
+    double basicThroughput = pModel->getObservations().basicThroughput;
+    bool Serverflag = true;
+    int servers = pModel->getServers();
+
+
+    //make your adaptation rules
+    if (responseTime > RT_THRESHOLD && Serverflag && !isServerBooting) {
+        // add server? reduce server? adjust dimmer?
+        pMacroTactic->addTactic(new AddServerTactic); // add server
+        servers++;
+        Serverflag = false;
+    } else if (responseTime < RT_THRESHOLD) {
+
+        // only if there is more than one server of spare capacity
+        if (!isServerBooting && pModel->getServers() > 1 && Serverflag && !isServerBooting) {
+            pMacroTactic->addTactic(new RemoveServerTactic);                        //method to remove server
+            Serverflag = false;
+                   
+            dimmer = 0.5;      //method to adjust dimmer value
+            pMacroTactic->addTactic(new SetDimmerTactic(dimmer));
+        }
+        if (!isServerBooting && servers < pModel->getMaxServers() && Serverflag && !isServerBooting) {   
+            pMacroTactic->addTactic(new AddServerTactic);                           //method to add server
+            servers++;
+            Serverflag = false;
+        }
+    }
+    
+
+    return pMacroTactic;
+}

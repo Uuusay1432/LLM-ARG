@@ -1,0 +1,42 @@
+#include "MyAdaptationManager.h"
+#include "managers/adaptation/UtilityScorer.h"
+#include "managers/execution/AllTactics.h"
+#include <deque>
+#include <numeric>
+
+using namespace std;
+
+Define_Module(MyAdaptationManager);
+
+Tactic* MyAdaptationManager::evaluate() {
+    MacroTactic* pMacroTactic = new MacroTactic;
+    Model* pModel = getModel();
+
+    // Fetch current metrics
+    double dimmer = pModel->getDimmerFactor();
+    double avgResponseTime = pModel->getObservations().avgResponseTime;
+    double utilization = pModel->getObservations().utilization;
+    double basicThroughput = pModel->getObservations().basicThroughput;
+    double optThroughput = pModel->getObservations().optThroughput;
+    int currentServers = pModel->getServers();
+    int activeServers = pModel->getActiveServers();
+    int maxServers = pModel->getMaxServers();
+    bool isServerBooting = currentServers > activeServers;
+
+    if (avgResponseTime > RT_THRESHOLD * 0.1 || utilization > 0.4) {
+        dimmer = max(0.0, dimmer - 0.2);
+        pMacroTactic->addTactic(new SetDimmerTactic(dimmer));
+        if (!isServerBooting && pModel->getServers() > 1)  {
+            pMacroTactic->addTactic(new RemoveServerTactic);
+        } 
+    } else if (avgResponseTime <  RT_THRESHOLD  * 0.1|| utilization < 0.8) { 
+        dimmer = min(1.0, dimmer + 0.2);
+        pMacroTactic->addTactic(new SetDimmerTactic(dimmer));
+        if (!isServerBooting
+                && pModel->getServers() < pModel->getMaxServers()) {
+            pMacroTactic->addTactic(new AddServerTactic);
+        }
+    }
+
+    return pMacroTactic;
+}

@@ -1,0 +1,50 @@
+#include "MyAdaptationManager.h"
+#include "managers/adaptation/UtilityScorer.h" // for RT_THRESHOLD and MAX_SERVICE_RATE
+#include "managers/execution/AllTactics.h"
+#include <cmath> // Include cmath for fmax and fmin functions
+
+Define_Module(MyAdaptationManager);
+using namespace std;
+int increasing = 0;
+int decreasing = 0;
+
+int inc_count=0;
+int dec_count=0;
+double temp_responseTime = 0.0;
+
+Tactic* MyAdaptationManager::evaluate() {
+    MacroTactic* pMacroTactic = new MacroTactic;
+    Model* pModel = getModel();
+    const double dimmerStep = 1.0 / (pModel->getNumberOfDimmerLevels() - 1);
+    double dimmer = pModel->getDimmerFactor();
+    double spareUtilization =  pModel->getConfiguration().getActiveServers() - pModel->getObservations().utilization;
+    bool isServerBooting = pModel->getServers() > pModel->getActiveServers();
+    double responseTime = (pModel->getObservations().optResponseTime * pModel->getDimmerFactor()) + (pModel->getObservations().basicResponseTime * (1 - pModel->getDimmerFactor()));
+
+    if (responseTime > 1.5 * RT_THRESHOLD) {
+        if (!isServerBooting
+                && pModel->getServers() < pModel->getMaxServers()) {
+            pMacroTactic->addTactic(new AddServerTactic);
+        } 
+        if (dimmer > 0.0) {
+            dimmer = max(0.0, dimmer - 0.5 * dimmerStep);
+            // dimmer = 0.0;
+            pMacroTactic->addTactic(new SetDimmerTactic(dimmer));
+        }
+    } else if (responseTime < 1.5 * RT_THRESHOLD) { // can we increase dimmer or remove servers?
+        // only if there is more than one server of spare capacity
+        if (spareUtilization > 1) {
+            if (dimmer < 1.0) {
+                // dimmer = 1.0;
+                dimmer = min(1.0, dimmer + 0.5 * dimmerStep);
+                pMacroTactic->addTactic(new SetDimmerTactic(dimmer));
+            }
+            if (!isServerBooting
+                    && pModel->getServers() > 1) {
+                pMacroTactic->addTactic(new RemoveServerTactic);
+            }
+        }
+    }
+
+    return pMacroTactic;
+}
